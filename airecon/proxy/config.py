@@ -34,6 +34,18 @@ def get_workspace_root() -> Path:
 
 
 DEFAULT_CONFIG = {
+    # Provider: "ollama" (default/local) or "openai" (cloud)
+    "provider": "ollama",
+
+    # OpenAI-specific settings (used when provider=="openai")
+    "openai_api_key": "",
+    "openai_model": "gpt-4o",
+    "openai_base_url": "https://api.openai.com/v1",
+    "openai_timeout": 120.0,
+    "openai_temperature": 0.15,
+    "openai_max_tokens": 16384,
+
+    # Ollama-specific settings (used when provider=="ollama")
     "ollama_url": "http://127.0.0.1:11434",
     "ollama_model": "qwen3.5:122b",
     "ollama_timeout": 1900.0,
@@ -73,6 +85,17 @@ DEFAULT_CONFIG = {
 @dataclass(frozen=True)
 class Config:
     """Application configuration loaded from ~/.airecon/config.json."""
+
+    # Provider selection: "ollama" | "openai"
+    provider: str
+
+    # OpenAI
+    openai_api_key: str
+    openai_model: str
+    openai_base_url: str
+    openai_timeout: float
+    openai_temperature: float
+    openai_max_tokens: int
 
     # Ollama
     ollama_url: str
@@ -264,6 +287,8 @@ class Config:
         _BOUNDS: dict[str, tuple[float | None, float | None]] = {
             "vuln_similarity_threshold": (0.0, 1.0),
             "ollama_timeout": (1.0, None),
+            "openai_timeout": (1.0, None),
+            "openai_max_tokens": (1, None),
             "command_timeout": (1.0, None),
             "agent_max_tool_iterations": (1, None),
             "agent_repeat_tool_call_limit": (1, None),

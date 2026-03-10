@@ -19,11 +19,12 @@ from .agent import AgentLoop
 from .config import get_config
 from .docker import DockerEngine
 from .ollama import OllamaClient
+from .openai_provider import OpenAIProvider
 
 logger = logging.getLogger("airecon.server")
 
 # Global instances
-ollama_client: OllamaClient | None = None
+ollama_client: OllamaClient | OpenAIProvider | None = None
 engine: DockerEngine | None = None
 agent: AgentLoop | None = None
 _chat_lock: asyncio.Lock | None = None
@@ -36,17 +37,25 @@ async def lifespan(app: FastAPI):
 
     cfg = get_config()
     logger.info(f"Starting AIRecon Proxy on {cfg.proxy_host}:{cfg.proxy_port}")
-    logger.info(f"  Ollama: {cfg.ollama_url} (model: {cfg.ollama_model})")
-    logger.info(f"  Docker image: {cfg.docker_image}")
+    logger.info(f"  Provider: {cfg.provider}")
 
-    # Initialize clients
-    ollama_client = OllamaClient()
+    # ── Select LLM provider ────────────────────────────────────────────
+    if cfg.provider == "openai":
+        logger.info(
+            f"  OpenAI: {cfg.openai_base_url} (model: {cfg.openai_model})"
+        )
+        ollama_client = OpenAIProvider()
+    else:
+        logger.info(f"  Ollama: {cfg.ollama_url} (model: {cfg.ollama_model})")
+        ollama_client = OllamaClient()
+    # ──────────────────────────────────────────────────────────────────
+
     engine = DockerEngine()
-    agent = AgentLoop(ollama=ollama_client, engine=engine)
+    agent = AgentLoop(ollama=ollama_client, engine=engine)  # type: ignore[arg-type]
 
-    # Check Ollama connectivity
+    # Check LLM connectivity
     ollama_ok = await ollama_client.health_check()
-    logger.info(f"  Ollama status: {'✓ connected' if ollama_ok else '✗ unavailable'}")
+    logger.info(f"  Provider status: {'✓ connected' if ollama_ok else '✗ unavailable'}")
 
     # Ensure Docker image exists (auto-build if needed)
     if cfg.docker_auto_build:
@@ -75,6 +84,7 @@ async def lifespan(app: FastAPI):
     if engine:
         await engine.close()
     logger.info("AIRecon Proxy shutdown complete")
+
 
 
 app = FastAPI(

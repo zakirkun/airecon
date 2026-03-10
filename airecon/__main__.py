@@ -94,6 +94,17 @@ def main() -> None:
         help="Minimum build cache to keep for fast rebuilds (default: 3gb). Use 0 to remove all."
     )
 
+    # setup subcommand
+    setup_parser = subparsers.add_parser(
+        "setup",
+        help="Interactive setup wizard — configure provider (Ollama / OpenAI) and key settings",
+    )
+    setup_parser.add_argument(
+        "--config",
+        default=None,
+        help="Path to config file to write (default: ~/.airecon/config.json)",
+    )
+
     args = parser.parse_args()
 
     # Initialize config globally with the provided path (if any)
@@ -113,6 +124,8 @@ def main() -> None:
         _run_status(args)
     elif args.command == "clean":
         _run_clean(args)
+    elif args.command == "setup":
+        _run_setup(args)
     else:
         parser.print_help()
         sys.exit(1)
@@ -340,36 +353,66 @@ def _run_status(args) -> None:
             f"  {C}║{X}  {D}v{version} — AI-Powered Security Reconnaissance{X}        {C}║{X}")
         print(f"  {C}╠{'═' * W}╣{X}")
 
-        # ── Ollama ──
-        ollama_status = OFF
-        model_names = []
-        active_model = cfg.ollama_model
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(f"{cfg.ollama_url}/api/tags")
-                models = resp.json().get("models", [])
-                model_names = [m["name"] for m in models]
-                ollama_status = ON
-        except Exception:  # nosec B110 - status check, best-effort
-            pass
+        # ── LLM Provider ──
+        if cfg.provider == "openai":
+            openai_status = OFF
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    import os as _os
+                    _key = cfg.openai_api_key or _os.environ.get("OPENAI_API_KEY", "")
+                    resp = await client.get(
+                        cfg.openai_base_url.rstrip("/") + "/models",
+                        headers={"Authorization": f"Bearer {_key}"},
+                    )
+                    if resp.status_code == 200:
+                        openai_status = ON
+            except Exception:  # nosec B110 - status check, best-effort
+                pass
 
-        print(f"  {C}║{X}")
-        print(f"  {C}║{X}  {B}Ollama{X}        {ollama_status}")
-        print(f"  {C}║{X}  {D}Endpoint:{X}     {cfg.ollama_url}")
-        print(f"  {C}║{X}  {D}Active Model:{X} {Y}{active_model}{X}")
-        if model_names:
-            # Show models in a compact grid (3 per line)
-            print(f"  {C}║{X}  {D}Available:{X}    ", end="")
-            for i, name in enumerate(model_names):
-                if i > 0 and i % 3 == 0:
-                    print(f"\n  {C}║{X}               ", end="")
-                if i % 3 > 0:
-                    print("  ", end="")
-                if name == active_model:
-                    print(f"{G}{name}{X}", end="")
-                else:
-                    print(f"{D}{name}{X}", end="")
-            print()
+            key_hint = (
+                "sk-..." + cfg.openai_api_key[-4:]
+                if cfg.openai_api_key
+                else "(env var OPENAI_API_KEY)"
+            )
+            print(f"  {C}║{X}")
+            print(f"  {C}║{X}  {B}Provider{X}      OpenAI")
+            print(f"  {C}║{X}  {B}Status{X}        {openai_status}")
+            print(f"  {C}║{X}  {D}Endpoint:{X}     {cfg.openai_base_url}")
+            print(f"  {C}║{X}  {D}Model:{X}        {Y}{cfg.openai_model}{X}")
+            print(f"  {C}║{X}  {D}API Key:{X}      {D}{key_hint}{X}")
+        else:
+            # ── Ollama ──
+            ollama_status = OFF
+            model_names = []
+            active_model = cfg.ollama_model
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    resp = await client.get(f"{cfg.ollama_url}/api/tags")
+                    models = resp.json().get("models", [])
+                    model_names = [m["name"] for m in models]
+                    ollama_status = ON
+            except Exception:  # nosec B110 - status check, best-effort
+                pass
+
+            print(f"  {C}║{X}")
+            print(f"  {C}║{X}  {B}Provider{X}      Ollama")
+            print(f"  {C}║{X}  {B}Status{X}        {ollama_status}")
+            print(f"  {C}║{X}  {D}Endpoint:{X}     {cfg.ollama_url}")
+            print(f"  {C}║{X}  {D}Active Model:{X} {Y}{active_model}{X}")
+            if model_names:
+                # Show models in a compact grid (3 per line)
+                print(f"  {C}║{X}  {D}Available:{X}    ", end="")
+                for i, name in enumerate(model_names):
+                    if i > 0 and i % 3 == 0:
+                        print(f"\n  {C}║{X}               ", end="")
+                    if i % 3 > 0:
+                        print("  ", end="")
+                    if name == active_model:
+                        print(f"{G}{name}{X}", end="")
+                    else:
+                        print(f"{D}{name}{X}", end="")
+                print()
+
 
         # ── Docker ──
         print(f"  {C}║{X}")
@@ -452,6 +495,13 @@ def _run_status(args) -> None:
     asyncio.run(check())
 
 
+def _run_setup(args) -> None:
+    """Run the interactive configuration wizard."""
+    from airecon.proxy.wizard import run_wizard
+    config_path = getattr(args, "config", None)
+    run_wizard(config_path=config_path)
+
+
 def _set_config_value(key: str, value: str) -> None:
     """Write a single key into ~/.airecon/config.json without touching other values."""
     import json
@@ -486,6 +536,18 @@ def _unload_model_safely():
             cfg = get_config()
         except BaseException:
             # Fallback if config completely fails
+            return
+
+        # For OpenAI provider, there is nothing to unload (model runs in the cloud)
+        if getattr(cfg, 'provider', 'ollama') == 'openai':
+            _docker = shutil.which("docker") or "docker"
+            print("\n[AIRecon] Cleaning up Docker Sandbox...", end="", flush=True)
+            subprocess.run(  # nosec B603
+                [_docker, "rm", "-f", "airecon-sandbox-active"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5)
+            print("Done.")
             return
 
         _docker = shutil.which("docker") or "docker"

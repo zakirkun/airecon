@@ -6,3 +6,7 @@ TODO.md
 .pytest_cache/
 .claude/
 coming_soon/
+venv/
+dist/
+build/
+poetry.lock

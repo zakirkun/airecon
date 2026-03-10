@@ -4,16 +4,18 @@
 
 1. [Config File Location](#1-config-file-location)
 2. [Full Config Reference](#2-full-config-reference)
-3. [Ollama Settings](#3-ollama-settings)
-4. [Agent Behavior](#4-agent-behavior)
-5. [Docker Sandbox](#5-docker-sandbox)
-6. [Server Settings](#6-server-settings)
-7. [Safety Settings](#7-safety-settings)
-8. [Browser Settings](#8-browser-settings)
-9. [Search Settings](#9-search-settings)
-10. [Session Settings](#10-session-settings)
-11. [Environment Variable Overrides](#11-environment-variable-overrides)
-12. [Configuration Presets](#12-configuration-presets)
+3. [OpenAI Settings](#3-openai-settings)
+4. [Ollama Settings](#4-ollama-settings)
+5. [Agent Behavior](#5-agent-behavior)
+6. [Docker Sandbox](#6-docker-sandbox)
+7. [Server Settings](#7-server-settings)
+8. [Safety Settings](#8-safety-settings)
+9. [Browser Settings](#9-browser-settings)
+10. [Search Settings](#10-search-settings)
+11. [Session Settings](#11-session-settings)
+12. [Environment Variable Overrides](#12-environment-variable-overrides)
+13. [Configuration Presets](#13-configuration-presets)
+14. [Setup Wizard](#14-setup-wizard)
 
 ---
 
@@ -41,6 +43,13 @@ code ~/.airecon/config.json
 
 ```json
 {
+    "provider": "ollama",
+    "openai_api_key": "",
+    "openai_model": "gpt-4o",
+    "openai_base_url": "https://api.openai.com/v1",
+    "openai_timeout": 120.0,
+    "openai_temperature": 0.15,
+    "openai_max_tokens": 16384,
     "ollama_url": "http://127.0.0.1:11434",
     "ollama_model": "qwen3.5:122b",
     "ollama_timeout": 1900.0,
@@ -73,7 +82,95 @@ code ~/.airecon/config.json
 
 ---
 
-## 3. Ollama Settings
+## 3. OpenAI Settings
+
+### `provider`
+**Type:** string | **Default:** `"ollama"`
+
+Selects the LLM backend. Valid values:
+
+| Value | Backend |
+|-------|---------|
+| `"ollama"` | Local Ollama instance (default) |
+| `"openai"` | OpenAI cloud API (or compatible endpoint) |
+
+```json
+"provider": "openai"
+```
+
+---
+
+### `openai_api_key`
+**Type:** string | **Default:** `""`
+
+Your OpenAI API key. Leave empty and set the `OPENAI_API_KEY` environment variable instead to avoid storing the key in plain text on disk.
+
+```bash
+export OPENAI_API_KEY=sk-...
+```
+
+> **Security:** If you store the key in `config.json`, make sure the file permissions are restricted (`chmod 600 ~/.airecon/config.json` on Linux/macOS).
+
+---
+
+### `openai_model`
+**Type:** string | **Default:** `"gpt-4o"`
+
+The OpenAI model to use. Any model available to your API key is valid.
+
+```json
+// Default — best overall quality
+"openai_model": "gpt-4o"
+
+// Faster, cheaper
+"openai_model": "gpt-4o-mini"
+
+// Latest reasoning model
+"openai_model": "o3"
+```
+
+---
+
+### `openai_base_url`
+**Type:** string | **Default:** `"https://api.openai.com/v1"`
+
+Base URL for the OpenAI-compatible API. Change this for Azure OpenAI, local proxies, or other OpenAI-compatible services.
+
+```json
+// OpenAI (default)
+"openai_base_url": "https://api.openai.com/v1"
+
+// Azure OpenAI
+"openai_base_url": "https://YOUR_RESOURCE.openai.azure.com/openai/deployments/YOUR_DEPLOYMENT"
+
+// Local proxy / LiteLLM
+"openai_base_url": "http://localhost:4000/v1"
+```
+
+---
+
+### `openai_timeout`
+**Type:** float | **Default:** `120.0` seconds
+
+How long to wait for a streaming response before giving up. 120 seconds is generous for `gpt-4o`.
+
+---
+
+### `openai_temperature`
+**Type:** float | **Default:** `0.15`
+
+Same semantics as `ollama_temperature`. Keep low for reliable tool-calling and scope adherence.
+
+---
+
+### `openai_max_tokens`
+**Type:** int | **Default:** `16384`
+
+Maximum tokens the model may generate per response.
+
+---
+
+## 4. Ollama Settings
 
 ### `ollama_url`
 **Type:** string | **Default:** `"http://127.0.0.1:11434"`
@@ -412,7 +509,7 @@ Comma-separated list of engines to query via SearXNG.
 
 ---
 
-## 10. Session Settings
+## 11. Session Settings
 
 ### `vuln_similarity_threshold`
 **Type:** float | **Default:** `0.7`
@@ -435,13 +532,21 @@ How many iterations between full plan revision checkpoints. At each checkpoint, 
 
 ---
 
-## 11. Environment Variable Overrides
+## 12. Environment Variable Overrides
 
 Any config key can be overridden without editing the file using environment variables. Format: `AIRECON_<KEY_UPPERCASE>`.
 
 ```bash
+# Select OpenAI provider
+AIRECON_PROVIDER=openai airecon start
+
+# Set OpenAI API key without storing it in config.json
+AIRECON_OPENAI_API_KEY=sk-... airecon start
+# (alternative: standard OPENAI_API_KEY env var also works)
+
 # Override model
 AIRECON_OLLAMA_MODEL=qwen3:32b airecon start
+AIRECON_OPENAI_MODEL=gpt-4o-mini airecon start
 
 # Override temperature
 AIRECON_OLLAMA_TEMPERATURE=0.2 airecon start
@@ -462,7 +567,7 @@ Environment variables take precedence over the config file. They are applied at 
 
 ---
 
-## 12. Configuration Presets
+## 13. Configuration Presets
 
 ### Preset: Minimum viable (16 GB VRAM, qwen3:30b-a3b MoE)
 
@@ -548,4 +653,64 @@ Environment variables take precedence over the config file. They are applied at 
     "command_timeout": 300.0,
     "agent_max_tool_iterations": 100
 }
+```
+
+### Preset: OpenAI GPT-4o (cloud)
+
+```json
+{
+    "provider": "openai",
+    "openai_model": "gpt-4o",
+    "openai_api_key": "",
+    "openai_base_url": "https://api.openai.com/v1",
+    "openai_temperature": 0.15,
+    "openai_max_tokens": 16384,
+    "command_timeout": 900.0,
+    "agent_max_tool_iterations": 500,
+    "searxng_url": "http://localhost:8080"
+}
+```
+
+> Set `OPENAI_API_KEY` env var or put the key directly in `openai_api_key`. The Docker sandbox still runs locally.
+
+---
+
+## 14. Setup Wizard
+
+AIRecon ships with an interactive setup wizard to help you configure everything without editing JSON manually.
+
+```bash
+airecon setup
+```
+
+The wizard will:
+1. Ask you to choose a provider — **Ollama** (local) or **OpenAI** (cloud)
+2. Prompt for provider-specific settings (URL/model for Ollama, API key/model for OpenAI)
+3. Configure Docker sandbox timeout and auto-build
+4. Set safety level (destructive vs. non-destructive)
+5. Configure SearXNG URL
+6. Show a summary and write `~/.airecon/config.json`
+
+```
+airecon setup
+
+  ▄▖▄▖▄▖
+  ▌▌▐ ▙▘█▌▛▘▛▌▛▌
+  ▛▌▟▖▌▌▙▖▙▖▙▌▌▌
+
+  AIRecon Setup Wizard
+
+  ────────────────────────────────────────────────────────────
+  1 · LLM Provider
+  ────────────────────────────────────────────────────────────
+
+  Which LLM provider do you want to use?
+    ▶ 1. Ollama  local models — free, private, requires GPU/CPU
+      2. OpenAI  cloud API — GPT-4o, requires API key
+```
+
+To write to a custom config path:
+
+```bash
+airecon setup --config /path/to/custom-config.json
 ```
